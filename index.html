@@ -130,6 +130,10 @@
         <button class="go" id="capBtn" disabled>● Start capturing</button>
       </div>
       <div class="bar" id="bar"><i id="barFill"></i></div>
+      <div id="meterWrap" style="display:none; margin-top:10px;">
+        <div style="font-size:11.5px; color:var(--ink-soft); margin-bottom:4px;">Captured audio level — this must move while the video plays</div>
+        <div style="height:9px; border-radius:5px; background:var(--line); overflow:hidden;"><i id="meterFill" style="display:block; height:100%; width:0%; background:var(--cinnabar); transition:width .08s;"></i></div>
+      </div>
 
       <div class="status"><span class="dot" id="dot"></span><span id="statusText">Paste a link and load the video. For caption-less videos, load the model, then start capturing.</span></div>
 
@@ -289,6 +293,8 @@ async function loadModel(){
 let audioCtx=null, mediaStream=null, srcNode=null, procNode=null;
 let buf=[], bufLen=0, chunkStartSample=0, totalSamples=0;
 let silentSamples=0, voicedSamples=0;
+let maxRmsSeen=0, silenceWarnTimer=null;
+const meterWrap=$("meterWrap"), meterFill=$("meterFill");
 const queue=[]; let draining=false;
 
 capBtn.addEventListener("click", ()=> capturing ? stopCapture() : startCapture());
@@ -316,13 +322,15 @@ async function startCapture(){
   buf=[]; bufLen=0; chunkStartSample=0; totalSamples=0; silentSamples=0; voicedSamples=0;
 
   const SR = audioCtx.sampleRate; // should be 16000
-  const SIL_RMS=0.004, SIL_HOLD=Math.floor(0.6*SR), MIN=Math.floor(2*SR), MAX=Math.floor(12*SR), MIN_VOICE=Math.floor(0.3*SR);
+  const SIL_RMS=0.012, SIL_HOLD=Math.floor(0.6*SR), MIN=Math.floor(2*SR), MAX=Math.floor(12*SR), MIN_VOICE=Math.floor(0.5*SR);
 
   procNode.onaudioprocess=(e)=>{
     const input=e.inputBuffer.getChannelData(0);
     const frame=new Float32Array(input.length); frame.set(input);
     let sum=0; for(let i=0;i<frame.length;i++) sum+=frame[i]*frame[i];
     const rms=Math.sqrt(sum/frame.length);
+    if(rms>maxRmsSeen) maxRmsSeen=rms;
+    meterFill.style.width=Math.min(100,Math.round(rms*450))+"%";
     buf.push(frame); bufLen+=frame.length; totalSamples+=frame.length;
     if(rms<SIL_RMS){ silentSamples+=frame.length; } else { silentSamples=0; voicedSamples+=frame.length; }
     const readyOnPause = bufLen>=MIN && voicedSamples>=MIN_VOICE && silentSamples>=SIL_HOLD;
@@ -338,11 +346,18 @@ async function startCapture(){
   srcNode.connect(procNode); procNode.connect(audioCtx.destination); // outputs silence, keeps graph alive
 
   capturing=true; capBtn.textContent="■ Stop capturing"; capBtn.classList.add("on"); dot.classList.add("live");
-  setStatus("Capturing tab audio — press play on the video. Lines appear every few seconds.");
+  maxRmsSeen=0; meterWrap.style.display="block"; meterFill.style.width="0%";
+  clearTimeout(silenceWarnTimer);
+  silenceWarnTimer=setTimeout(()=>{
+    if(capturing && maxRmsSeen<0.01){
+      setStatus("No audio is coming through. Stop, click Start capturing again, pick the TAB playing the video, and tick “Also share tab audio.”",true);
+    }
+  }, 7000);
+  setStatus("Capturing tab audio — press play on the video. Watch the level meter move.");
 }
 
 function stopCapture(){
-  capturing=false;
+  capturing=false; clearTimeout(silenceWarnTimer); meterWrap.style.display="none"; meterFill.style.width="0%";
   try{ if(procNode){ procNode.disconnect(); procNode.onaudioprocess=null; } }catch(e){}
   try{ if(srcNode) srcNode.disconnect(); }catch(e){}
   try{ if(audioCtx) audioCtx.close(); }catch(e){}
@@ -357,6 +372,21 @@ function stopCapture(){
   if(!queue.length && !draining) setStatus("Stopped. "+(segments.length?"Transcript ready.":"Nothing captured."));
 }
 
+function isJunk(text){
+  if(!text || text.length<2) return true;
+  const t=text.replace(/\s+/g,"");
+  if(t.length<2) return true;
+  // dominated by one repeated character (e.g. "(((((", "。。。", "谢谢谢谢")
+  const counts={}; let top=0;
+  for(const ch of t){ counts[ch]=(counts[ch]||0)+1; if(counts[ch]>top) top=counts[ch]; }
+  if(top/t.length>0.5 && t.length>=4) return true;
+  // a long run of the same character
+  if(/(.)\1{5,}/.test(t)) return true;
+  // when transcribing Chinese, require at least one CJK character
+  if(langSel.value==="chinese" && !/[\u3400-\u9FFF]/.test(t)) return true;
+  return false;
+}
+
 async function drain(){
   if(draining || !queue.length) return;
   draining=true; dot.classList.add("busy");
@@ -367,7 +397,7 @@ async function drain(){
       const opts={ task:"transcribe" }; const lang=langSel.value; if(lang) opts.language=lang;
       const out=await transcriber(item.audio, opts);
       const text=(out&&out.text?out.text:"").replace(/\s+/g," ").trim();
-      if(text && text.length>1){ segments.push({ t:item.t, text }); segments.sort((a,b)=>a.t-b.t); renderSegments(); }
+      if(text && !isJunk(text)){ segments.push({ t:item.t, text }); segments.sort((a,b)=>a.t-b.t); renderSegments(); }
     }catch(err){ /* skip a bad chunk, keep going */ }
   }
   draining=false; dot.classList.remove("busy");
