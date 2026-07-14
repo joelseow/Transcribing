@@ -1,0 +1,557 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>听写 · Mandarin Transcriber</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --porcelain: #EDF0F3;
+    --ink: #191C22;
+    --ink-soft: #4A5160;
+    --cinnabar: #BE3A2B;
+    --cinnabar-soft: rgba(190,58,43,.18);
+    --celadon: #6D8F7B;
+    --paper: #FCFBF8;
+    --line: #D8DCE2;
+    --radius: 10px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--porcelain);
+    color: var(--ink);
+    font-family: "IBM Plex Sans", system-ui, sans-serif;
+    min-height: 100vh;
+    padding: 28px 20px 60px;
+  }
+  .wrap { max-width: 1060px; margin: 0 auto; }
+
+  /* ---------- header ---------- */
+  header { display: flex; align-items: baseline; gap: 14px; margin-bottom: 22px; flex-wrap: wrap; }
+  .seal {
+    font-family: "Noto Serif SC", serif;
+    background: var(--cinnabar); color: var(--paper);
+    font-size: 20px; font-weight: 600; line-height: 1;
+    padding: 9px 10px; border-radius: 6px;
+    letter-spacing: 2px;
+    box-shadow: 0 2px 0 rgba(25,28,34,.15);
+    user-select: none;
+  }
+  h1 { font-size: 21px; font-weight: 600; letter-spacing: -.01em; }
+  header p { color: var(--ink-soft); font-size: 13.5px; width: 100%; max-width: 640px; }
+
+  /* ---------- layout ---------- */
+  .grid { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 18px; }
+  @media (max-width: 860px) { .grid { grid-template-columns: 1fr; } }
+
+  .card {
+    background: var(--paper);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 16px;
+  }
+
+  /* ---------- input row ---------- */
+  .linkrow { display: flex; gap: 8px; margin-bottom: 14px; }
+  .linkrow input {
+    flex: 1; min-width: 0;
+    font: 14px/1.4 "IBM Plex Mono", monospace;
+    padding: 10px 12px;
+    border: 1px solid var(--line); border-radius: 8px;
+    background: #fff; color: var(--ink);
+  }
+  .linkrow input:focus { outline: 2px solid var(--cinnabar-soft); border-color: var(--cinnabar); }
+  button {
+    font: 500 14px/1 "IBM Plex Sans", sans-serif;
+    padding: 10px 14px; border-radius: 8px; cursor: pointer;
+    border: 1px solid var(--line); background: #fff; color: var(--ink);
+    transition: background .12s ease, border-color .12s ease;
+  }
+  button:hover { border-color: var(--ink-soft); }
+  button:focus-visible { outline: 2px solid var(--cinnabar); outline-offset: 1px; }
+  button.primary { background: var(--ink); border-color: var(--ink); color: var(--paper); }
+  button.primary:hover { background: #2A2F39; }
+  button.record { background: var(--cinnabar); border-color: var(--cinnabar); color: #fff; min-width: 128px; }
+  button.record:hover { background: #A93225; }
+  button.record.on { background: var(--ink); border-color: var(--ink); }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+
+  /* ---------- video ---------- */
+  .player {
+    position: relative; width: 100%; aspect-ratio: 16/9;
+    background: var(--ink); border-radius: 8px; overflow: hidden;
+  }
+  .player iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+  .player .empty {
+    position: absolute; inset: 0; display: grid; place-items: center;
+    color: #9AA1AE; font-size: 13.5px; text-align: center; padding: 20px;
+  }
+  .player .empty .zi { font-family: "Noto Serif SC", serif; font-size: 40px; color: #3A404C; display: block; margin-bottom: 8px; }
+
+  /* ---------- controls ---------- */
+  .controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 14px; }
+  .controls .spacer { flex: 1; }
+  select {
+    font: 14px "IBM Plex Sans", sans-serif; padding: 9px 10px;
+    border: 1px solid var(--line); border-radius: 8px; background: #fff; color: var(--ink);
+  }
+  .status { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ink-soft); margin-top: 12px; min-height: 20px; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--line); flex: none; }
+  .dot.live { background: var(--cinnabar); animation: pulse 1.4s ease-in-out infinite; }
+  @keyframes pulse { 50% { box-shadow: 0 0 0 6px var(--cinnabar-soft); } }
+  @media (prefers-reduced-motion: reduce) { .dot.live { animation: none; } }
+  .status.warn { color: var(--cinnabar); }
+
+  .hint {
+    margin-top: 12px; font-size: 12.5px; color: var(--ink-soft);
+    border-left: 3px solid var(--celadon); padding: 2px 0 2px 10px;
+  }
+
+  /* ---------- built-in captions panel ---------- */
+  .caps {
+    margin-top: 12px; border: 1px solid var(--line); border-radius: 8px;
+    padding: 10px 12px; background: #fff;
+  }
+  .caps-head {
+    font-size: 11.5px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: .07em; color: var(--ink-soft); margin-bottom: 8px;
+  }
+  .caps-body { display: flex; flex-wrap: wrap; gap: 6px; font-size: 13px; color: var(--ink-soft); align-items: center; }
+  button.track { padding: 7px 11px; font-size: 13px; }
+  button.track.zh { border-color: var(--celadon); color: var(--ink); }
+  button.track.sel { background: var(--celadon); border-color: var(--celadon); color: #fff; }
+
+  /* ---------- transcript: red-ruled letter paper ---------- */
+  .transcript-card { display: flex; flex-direction: column; min-height: 420px; }
+  .transcript-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+  .transcript-head h2 { font-size: 15px; font-weight: 600; margin-right: auto; }
+  .transcript-head button { padding: 7px 11px; font-size: 13px; }
+  label.ts { display: flex; align-items: center; gap: 5px; font-size: 12.5px; color: var(--ink-soft); cursor: pointer; }
+
+  .paper {
+    flex: 1; overflow-y: auto; max-height: 520px;
+    background:
+      repeating-linear-gradient(to bottom, transparent 0 35px, var(--cinnabar-soft) 35px 36px),
+      #FFFDF9;
+    border: 1px solid var(--cinnabar-soft);
+    border-radius: 8px;
+    padding: 6px 16px 20px 16px;
+    box-shadow: inset 3px 0 0 var(--cinnabar-soft), inset -3px 0 0 var(--cinnabar-soft);
+  }
+  .seg {
+    font-family: "Noto Serif SC", serif;
+    font-size: 17.5px; line-height: 36px; color: var(--ink);
+  }
+  .seg .stamp {
+    font: 500 11px/1 "IBM Plex Mono", monospace;
+    color: var(--cinnabar); margin-right: 8px; vertical-align: 2px;
+  }
+  .seg.interim { color: #9AA1AE; }
+  .paper .placeholder {
+    font-size: 13.5px; color: #A9AFBA; line-height: 36px;
+    font-family: "IBM Plex Sans", sans-serif;
+  }
+  .count { font-size: 12px; color: var(--ink-soft); margin-top: 8px; text-align: right; }
+
+  .toast {
+    position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%);
+    background: var(--ink); color: var(--paper); font-size: 13.5px;
+    padding: 10px 16px; border-radius: 8px; opacity: 0; pointer-events: none;
+    transition: opacity .2s ease;
+  }
+  .toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="seal">听写</div>
+    <h1>Mandarin Transcriber</h1>
+    <p>Paste a YouTube link and the app first checks for built-in captions — if it finds any, click a track and the full transcript loads instantly. If the video has none, use live listening: play it out loud and the page transcribes the Mandarin through your microphone. Best in Chrome or Edge.</p>
+  </header>
+
+  <div class="grid">
+    <!-- left: video + controls -->
+    <section class="card">
+      <div class="linkrow">
+        <input id="url" type="text" placeholder="https://www.youtube.com/watch?v=..." aria-label="YouTube link">
+        <button class="primary" id="loadBtn">Load video</button>
+      </div>
+
+      <div class="player" id="player">
+        <div class="empty"><div><span class="zi">聽</span>Paste a YouTube link above to load the video here.</div></div>
+      </div>
+
+      <div class="caps" id="capBox" hidden>
+        <div class="caps-head">Built-in captions</div>
+        <div class="caps-body" id="capBody"></div>
+      </div>
+
+      <div class="controls">
+        <button class="record" id="recBtn">● Start listening</button>
+        <select id="lang" aria-label="Recognition language">
+          <option value="zh-CN" selected>Mandarin · Simplified (zh-CN)</option>
+          <option value="zh-TW">Mandarin · Traditional (zh-TW)</option>
+          <option value="zh-HK">Cantonese (zh-HK)</option>
+        </select>
+        <div class="spacer"></div>
+      </div>
+
+      <div class="status"><span class="dot" id="dot"></span><span id="statusText">Idle. Load a video, then start listening before you press play.</span></div>
+
+      <div class="hint">Play the video through your speakers (not headphones) so the microphone can hear it. Transcription happens in real time — a 20-minute video takes 20 minutes. You can pause the video anytime; listening continues until you stop it.</div>
+    </section>
+
+    <!-- right: transcript -->
+    <section class="card transcript-card">
+      <div class="transcript-head">
+        <h2>Transcript</h2>
+        <label class="ts"><input type="checkbox" id="tsToggle" checked> timestamps</label>
+        <button id="copyBtn">Copy</button>
+        <button id="dlBtn">Download .txt</button>
+        <button id="clearBtn">Clear</button>
+      </div>
+      <div class="paper" id="paper">
+        <p class="placeholder">Nothing written yet. Start listening, then play the video — finished lines appear in ink, and the line being heard shows in gray.</p>
+      </div>
+      <div class="count" id="count"></div>
+    </section>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(function () {
+  const $ = id => document.getElementById(id);
+  const urlInput = $("url"), player = $("player"), recBtn = $("recBtn"),
+        dot = $("dot"), statusText = $("statusText"), paper = $("paper"),
+        count = $("count"), toast = $("toast"), langSel = $("lang"),
+        tsToggle = $("tsToggle"), capBox = $("capBox"), capBody = $("capBody");
+
+  let segments = [];        // { t: seconds since start, text: string }
+  let listening = false;
+  let recognition = null;
+  let startedAt = null;
+  let interimEl = null;
+
+  /* ---------- helpers ---------- */
+  function showToast(msg) {
+    toast.textContent = msg;
+    toast.classList.add("show");
+    clearTimeout(showToast._t);
+    showToast._t = setTimeout(() => toast.classList.remove("show"), 1800);
+  }
+  function setStatus(msg, warn) {
+    statusText.textContent = msg;
+    statusText.parentElement.classList.toggle("warn", !!warn);
+  }
+  function fmt(sec) {
+    sec = Math.max(0, Math.floor(sec));
+    const m = Math.floor(sec / 60), s = sec % 60;
+    return String(m).padStart(2, "0") + ":" + String(s).padStart(2, "0");
+  }
+
+  /* ---------- video loading ---------- */
+  function parseVideoId(raw) {
+    if (!raw) return null;
+    raw = raw.trim();
+    // bare 11-char ID
+    if (/^[A-Za-z0-9_-]{11}$/.test(raw)) return raw;
+    try {
+      const u = new URL(raw);
+      if (u.hostname.includes("youtu.be")) return u.pathname.slice(1).split("/")[0] || null;
+      if (u.pathname.startsWith("/watch")) return u.searchParams.get("v");
+      const m = u.pathname.match(/\/(shorts|embed|live)\/([A-Za-z0-9_-]{11})/);
+      if (m) return m[2];
+    } catch (e) { /* not a URL */ }
+    return null;
+  }
+
+  $("loadBtn").addEventListener("click", loadVideo);
+  urlInput.addEventListener("keydown", e => { if (e.key === "Enter") loadVideo(); });
+
+  function loadVideo() {
+    const id = parseVideoId(urlInput.value);
+    if (!id) { setStatus("That doesn't look like a YouTube link. Paste the full URL of the video.", true); return; }
+    player.innerHTML = "";
+    const f = document.createElement("iframe");
+    f.src = "https://www.youtube.com/embed/" + id;
+    f.allow = "autoplay; encrypted-media; picture-in-picture";
+    f.allowFullscreen = true;
+    f.title = "YouTube video";
+    player.appendChild(f);
+    setStatus("Video loaded. Checking for built-in captions…");
+    checkCaptions(id);
+  }
+
+  /* ---------- built-in captions ---------- */
+  // YouTube doesn't send CORS headers, so caption data is fetched through
+  // public read-only proxies. Each is tried in turn.
+  const PROXIES = [
+    u => "https://api.allorigins.win/raw?url=" + encodeURIComponent(u),
+    u => "https://corsproxy.io/?url=" + encodeURIComponent(u),
+    u => "https://api.codetabs.com/v1/proxy?quest=" + encodeURIComponent(u)
+  ];
+
+  async function proxyFetch(url) {
+    for (const wrap of PROXIES) {
+      try {
+        const res = await fetch(wrap(url));
+        if (res.ok) {
+          const text = await res.text();
+          if (text && text.length > 0) return text;
+        }
+      } catch (e) { /* try next proxy */ }
+    }
+    throw new Error("All caption proxies failed");
+  }
+
+  // Extract a JSON array value for `key` from raw HTML, with proper
+  // bracket matching (a lazy regex would stop at nested arrays).
+  function extractArray(str, key) {
+    const i = str.indexOf('"' + key + '":');
+    if (i < 0) return null;
+    const start = str.indexOf("[", i);
+    if (start < 0) return null;
+    let depth = 0;
+    for (let j = start; j < str.length; j++) {
+      const c = str[j];
+      if (c === '"') {            // skip string contents
+        j++;
+        while (j < str.length && str[j] !== '"') { if (str[j] === "\\") j++; j++; }
+      } else if (c === "[") depth++;
+      else if (c === "]") { depth--; if (depth === 0) return str.slice(start, j + 1); }
+    }
+    return null;
+  }
+
+  function trackLabel(t) {
+    const name = t.name?.simpleText || t.name?.runs?.map(r => r.text).join("") || t.languageCode || "Unknown";
+    return name + (t.kind === "asr" ? " · auto-generated" : "");
+  }
+
+  async function checkCaptions(id) {
+    capBox.hidden = false;
+    capBody.textContent = "Checking for built-in captions…";
+    try {
+      const html = await proxyFetch("https://www.youtube.com/watch?v=" + id + "&hl=en");
+      const arr = extractArray(html, "captionTracks");
+      const tracks = arr ? JSON.parse(arr) : [];
+      if (!tracks.length) {
+        capBody.textContent = "No built-in captions on this video — use live listening below.";
+        setStatus("No captions found. Start listening, then press play on the video.");
+        return;
+      }
+      // Chinese tracks first
+      tracks.sort((a, b) =>
+        ((b.languageCode || "").startsWith("zh") ? 1 : 0) -
+        ((a.languageCode || "").startsWith("zh") ? 1 : 0));
+      capBody.innerHTML = "";
+      for (const t of tracks) {
+        const b = document.createElement("button");
+        b.className = "track" + ((t.languageCode || "").startsWith("zh") ? " zh" : "");
+        b.textContent = trackLabel(t);
+        b.addEventListener("click", () => loadTrack(t, b));
+        capBody.appendChild(b);
+      }
+      setStatus("Captions found — click a track for an instant transcript, or use live listening.");
+    } catch (e) {
+      capBody.textContent = "Couldn't check for captions (network blocked or proxies down). Use live listening below, or open this file in a desktop browser.";
+      setStatus("Caption check failed. Live listening still works — start it, then play the video.");
+    }
+  }
+
+  async function loadTrack(track, btn) {
+    if (segments.length && !confirm("Replace the current transcript with these captions?")) return;
+    if (listening) stopListening(true);
+    capBody.querySelectorAll("button").forEach(b => b.classList.remove("sel"));
+    setStatus("Fetching caption track…");
+    try {
+      const raw = await proxyFetch(track.baseUrl + "&fmt=json3");
+      const data = JSON.parse(raw);
+      const lines = [];
+      for (const e of (data.events || [])) {
+        if (!e.segs) continue;
+        const text = e.segs.map(s => s.utf8 || "").join("").replace(/\n/g, " ").trim();
+        if (text) lines.push({ t: (e.tStartMs || 0) / 1000, text });
+      }
+      if (!lines.length) throw new Error("Empty caption track");
+      segments = lines;
+      btn.classList.add("sel");
+      renderSegments();
+      setStatus("Captions loaded — " + lines.length + " lines. Copy or download when ready.");
+      showToast("Captions loaded");
+    } catch (err) {
+      setStatus("Couldn't fetch that caption track. Try another track, or use live listening instead.", true);
+    }
+  }
+
+  /* ---------- speech recognition ---------- */
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) {
+    recBtn.disabled = true;
+    setStatus("This browser doesn't support speech recognition. Open this file in Chrome or Edge on desktop.", true);
+  }
+
+  function buildRecognition() {
+    const r = new SR();
+    r.lang = langSel.value;
+    r.continuous = true;
+    r.interimResults = true;
+
+    r.onresult = (e) => {
+      let interim = "";
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const res = e.results[i];
+        if (res.isFinal) {
+          const text = res[0].transcript.trim();
+          if (text) {
+            segments.push({ t: (Date.now() - startedAt) / 1000, text });
+            renderSegments();
+          }
+        } else {
+          interim += res[0].transcript;
+        }
+      }
+      renderInterim(interim);
+    };
+
+    r.onerror = (e) => {
+      if (e.error === "not-allowed" || e.error === "service-not-allowed") {
+        stopListening();
+        setStatus("Microphone access was blocked. Allow the mic in the browser's site permissions, then try again.", true);
+      } else if (e.error === "no-speech") {
+        // harmless; onend will restart
+      } else if (e.error === "network") {
+        setStatus("Speech service network error — recognition will keep retrying. Check your connection.", true);
+      }
+    };
+
+    // Chrome ends sessions periodically; restart while we're meant to be listening
+    r.onend = () => {
+      if (listening) {
+        try { r.start(); } catch (err) { /* already starting */ }
+      }
+    };
+    return r;
+  }
+
+  recBtn.addEventListener("click", () => listening ? stopListening() : startListening());
+  langSel.addEventListener("change", () => {
+    if (listening) { // restart with new language
+      stopListening(true);
+      startListening();
+      showToast("Switched to " + langSel.options[langSel.selectedIndex].text);
+    }
+  });
+
+  function startListening() {
+    if (!SR) return;
+    recognition = buildRecognition();
+    try { recognition.start(); } catch (e) { return; }
+    listening = true;
+    if (!startedAt) startedAt = Date.now();
+    recBtn.textContent = "■ Stop listening";
+    recBtn.classList.add("on");
+    dot.classList.add("live");
+    setStatus("Listening for Mandarin… press play on the video.");
+  }
+
+  function stopListening(silent) {
+    listening = false;
+    if (recognition) { recognition.onend = null; try { recognition.stop(); } catch (e) {} }
+    recognition = null;
+    renderInterim("");
+    recBtn.textContent = "● Start listening";
+    recBtn.classList.remove("on");
+    dot.classList.remove("live");
+    if (!silent) setStatus("Stopped. " + (segments.length ? "Transcript is ready to copy or download." : "Nothing captured yet."));
+  }
+
+  /* ---------- rendering ---------- */
+  function renderSegments() {
+    paper.querySelector(".placeholder")?.remove();
+    // rebuild finalized segments (keeps interim element last)
+    paper.querySelectorAll(".seg:not(.interim)").forEach(el => el.remove());
+    const frag = document.createDocumentFragment();
+    for (const s of segments) {
+      const p = document.createElement("p");
+      p.className = "seg";
+      if (tsToggle.checked) {
+        const st = document.createElement("span");
+        st.className = "stamp";
+        st.textContent = fmt(s.t);
+        p.appendChild(st);
+      }
+      p.appendChild(document.createTextNode(s.text));
+      frag.appendChild(p);
+    }
+    paper.insertBefore(frag, interimEl);
+    updateCount();
+    paper.scrollTop = paper.scrollHeight;
+  }
+
+  function renderInterim(text) {
+    if (!text) { interimEl?.remove(); interimEl = null; return; }
+    if (!interimEl) {
+      interimEl = document.createElement("p");
+      interimEl.className = "seg interim";
+      paper.appendChild(interimEl);
+    }
+    interimEl.textContent = text;
+    paper.scrollTop = paper.scrollHeight;
+  }
+
+  tsToggle.addEventListener("change", renderSegments);
+
+  function updateCount() {
+    const chars = segments.reduce((n, s) => n + s.text.length, 0);
+    count.textContent = segments.length ? segments.length + " lines · " + chars + " characters" : "";
+  }
+
+  /* ---------- export ---------- */
+  function transcriptText() {
+    return segments.map(s => (tsToggle.checked ? "[" + fmt(s.t) + "] " : "") + s.text).join("\n");
+  }
+
+  $("copyBtn").addEventListener("click", async () => {
+    if (!segments.length) { showToast("Nothing to copy yet"); return; }
+    try {
+      await navigator.clipboard.writeText(transcriptText());
+      showToast("Transcript copied");
+    } catch (e) {
+      // fallback
+      const ta = document.createElement("textarea");
+      ta.value = transcriptText(); document.body.appendChild(ta);
+      ta.select(); document.execCommand("copy"); ta.remove();
+      showToast("Transcript copied");
+    }
+  });
+
+  $("dlBtn").addEventListener("click", () => {
+    if (!segments.length) { showToast("Nothing to download yet"); return; }
+    const blob = new Blob([transcriptText()], { type: "text/plain;charset=utf-8" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "mandarin-transcript.txt";
+    a.click();
+    URL.revokeObjectURL(a.href);
+    showToast("Downloading transcript");
+  });
+
+  $("clearBtn").addEventListener("click", () => {
+    if (!segments.length) return;
+    if (!confirm("Clear the whole transcript?")) return;
+    segments = [];
+    startedAt = listening ? Date.now() : null;
+    paper.innerHTML = '<p class="placeholder">Nothing written yet. Start listening, then play the video — finished lines appear in ink, and the line being heard shows in gray.</p>';
+    interimEl = null;
+    updateCount();
+  });
+})();
+</script>
+</body>
+</html>
